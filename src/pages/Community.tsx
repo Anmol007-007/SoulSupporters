@@ -85,7 +85,111 @@ const Community = () => {
 
   const categories = ["General", "Academic Stress", "Self-Care", "Family Issues", "Relationships", "Anxiety", "Depression"];
 
-  const PostCard = ({ post }: { post: any }) => (
+  useEffect(() => {
+    fetchPosts();
+    
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('forum-updates')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'forum_posts' },
+        (payload) => {
+          const newPost = payload.new as any;
+          if (newPost.is_moderated) {
+            setPosts(prev => [newPost, ...prev]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchPosts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('forum_posts')
+        .select(`
+          *,
+          forum_replies(count)
+        `)
+        .eq('is_moderated', true)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const postsWithCounts = data?.map(post => ({
+        id: post.id,
+        title: post.title,
+        content: post.content,
+        author: post.is_anonymous ? 'Anonymous' : 'User',
+        category: post.category || 'General',
+        likes: 0, // TODO: Implement likes system
+        replies: post.forum_replies?.[0]?.count || 0,
+        timestamp: new Date(post.created_at).toLocaleDateString(),
+        is_anonymous: post.is_anonymous,
+        is_moderated: post.is_moderated
+      })) || [];
+
+      setPosts(postsWithCounts);
+    } catch (error) {
+      console.error('Error fetching posts:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load forum posts",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createPost = async () => {
+    if (!newPostTitle.trim() || !newPostContent.trim()) {
+      toast({
+        title: "Error",
+        description: "Please fill in both title and content",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('forum_posts').insert({
+        title: newPostTitle,
+        content: newPostContent,
+        category: selectedCategory || 'General',
+        is_anonymous: isAnonymous,
+        user_id: 'temp-user-id', // Will be replaced with actual auth
+        is_moderated: true // Auto-approve for now, add moderation later
+      });
+
+      if (error) throw error;
+
+      setNewPostTitle("");
+      setNewPostContent("");
+      setSelectedCategory("");
+      setShowNewPost(false);
+      
+      toast({
+        title: "Success",
+        description: "Your post has been shared with the community",
+      });
+
+      fetchPosts(); // Refresh posts
+    } catch (error) {
+      console.error('Error creating post:', error);
+      toast({
+        title: "Error",
+        description: "Failed to create post. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const PostCard = ({ post }: { post: ForumPost }) => (
     <Card className="shadow-soft hover:shadow-medium transition-all duration-300">
       <CardHeader>
         <div className="flex items-start justify-between">
@@ -226,9 +330,20 @@ const Community = () => {
 
           {/* Forum Posts */}
           <div className="space-y-4">
-            {forumPosts.map((post) => (
-              <PostCard key={post.id} post={post} />
-            ))}
+            {loading ? (
+              <div className="text-center py-8">Loading posts...</div>
+            ) : posts.length === 0 ? (
+              <Card>
+                <CardContent className="text-center py-8">
+                  <MessageSquare className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <p className="text-muted-foreground">No posts yet. Be the first to share!</p>
+                </CardContent>
+              </Card>
+            ) : (
+              posts.map((post) => (
+                <PostCard key={post.id} post={post} />
+              ))
+            )}
           </div>
         </div>
 

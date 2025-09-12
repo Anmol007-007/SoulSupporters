@@ -115,8 +115,15 @@ const guides = [
 ];
 
 const Resources = () => {
+  const { toast } = useToast();
+  const [resources, setResources] = useState<Resource[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("all");
+  const [selectedType, setSelectedType] = useState<'all' | 'video' | 'audio' | 'guide'>('all');
+  const [loading, setLoading] = useState(true);
+  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
+  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+  const [showResourceDialog, setShowResourceDialog] = useState(false);
 
   const languages = ["all", "English", "Hindi", "Tamil", "Bengali", "Telugu", "Marathi"];
 
